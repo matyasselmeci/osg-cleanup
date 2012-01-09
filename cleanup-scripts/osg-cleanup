@@ -2,13 +2,12 @@
 
 =head1 NAME 
 
-vdt-cleanup-dirs - Cleanup cruft from the VDT installation and user
+osg-cleanup-dirs - Cleanup old files from the OSG installation and user
                    directories.
 
 =head1 SYNOPSIS
 
-    vdt-cleanup [options] 
-                --vdt-install <location>
+    osg-cleanup [options] 
                 --dry-run
                 --help
 
@@ -20,19 +19,13 @@ Write a description and put it here.
 
 =over 4
 
-=item B<--vdt-install> <location>
-
-The location the VDT was installed in. This option overrides the
-$VDT_LOCATION environment variable if it exists. This option is not
-needed if $VDT_LOCATION is set to the correct location. 
-
 =item B<--dry-run>
 
 Print what will be done, but do not actually do any work.
 
 =item B<--help> 
 
-Show brief explanatory text for using vdt-cleanup
+Show brief explanatory text for using osg-cleanup
 
 =back
 
@@ -43,34 +36,21 @@ use warnings;
 use Getopt::Long;
 use File::Basename;
 
-my $VDT_LOCATION = $ENV{VDT_LOCATION} || "";
 my $OPT_DRY_RUN = 0;
 my $AGE_IN_DAYS = 14;
 my $USERS;
 
-GetOptions("vdt-install=s" => \$VDT_LOCATION,
-           "dry-run"       => \$OPT_DRY_RUN,
-           "help|usage"    => \&usage);
-
-check_options();
-
-# Set this for all children scripts
-$ENV{VDT_LOCATION} = $VDT_LOCATION;
+GetOptions("dry-run"    => \$OPT_DRY_RUN,
+           "help|usage" => \&usage);
 
 my $time = time();
-my $CONFIG_FILE = "$VDT_LOCATION/vdt/etc/vdt-cleanup.conf";
-my $LOG_FILE    = "$VDT_LOCATION/logs/vdt-cleanup.log";
-my $SCRIPT_DIR  = "$VDT_LOCATION/vdt/cleanup-scripts";
-my $LOCK_FILE   = "$VDT_LOCATION/vdt/var/vdt-cleanup.lock";
-my $USER_FILE   = "$VDT_LOCATION/vdt/var/vdt-cleanup.users.$time.$$";
-my $SCRIPT_NAME = basename($0);
+my $CONFIG_FILE = "/etc/osg/osg-cleanup.conf";
+my $LOG_FILE    = "/var/log/osg/osg-cleanup.log";
+my $SCRIPT_DIR  = "/usr/libexec/osg-cleanup";
+my $LOCK_FILE   = "/var/lock/osg-cleanup.lock";
+my $USER_FILE   = "/tmp/osg-cleanup.users.$time.$$";
 
-# We can't load VDTConfigure until we know where VDT_LOCATION is
-push @INC, "$VDT_LOCATION/vdt/lib";
-require VDTConfigure;
-VDTConfigure::set_system_logfile($LOG_FILE);
-VDTConfigure->import();
-
+open(LOG, '>', $LOG_FILE) or warn("Cannot open log file for writing '$LOG_FILE': $!");
 
 load_config_file($CONFIG_FILE);
 make_user_file($USER_FILE, $USERS);
@@ -78,23 +58,6 @@ create_lock($LOCK_FILE);
 find_and_run_scripts($SCRIPT_DIR);
 remove_lock($LOCK_FILE);
 unlink($USER_FILE);
-
-
-sub check_options {
-    # We can't log any of these errors because we don't know where the log file is
-    if(!$VDT_LOCATION) {
-        die("Either \$VDT_LOCATION must be set in your environment or pass --vdt-install");
-    }
-    elsif(!-e $VDT_LOCATION) {
-        die("ERROR: VDT_LOCATION does not exist ($VDT_LOCATION)");
-    }
-    elsif(!-d $VDT_LOCATION) {
-        die("ERROR: VDT_LOCATION is not a directory ($VDT_LOCATION)");
-    }
-    elsif(!-d "$VDT_LOCATION/o..pacman..o") {
-        die("ERROR: VDT_LOCATION exists but does not appear to be a VDT install because the o..pacman..o directory is missing ($VDT_LOCATION)");
-    }
-}
 
 
 sub load_config_file {
@@ -144,11 +107,9 @@ sub make_user_file {
         }
     }
 
-    # First "touch" the users file and set its permissions and ownership to lock it down
+    # First "touch" the users file and set its permissions to lock it down
     open(USERS, '>', $file) or log_and_die("Cannot open $file for writing: $!");
     close(USERS);
-    my $user = (getpwuid($<))[0];
-    vdt_chown($user, undef, 1, $file);
     chmod 0700, $file;
 
     open(USERS, '>', $file) or log_and_die("Cannot open $file for writing: $!");
@@ -158,14 +119,14 @@ sub make_user_file {
     close(USERS);
 
     # Set this in the environment so children can find it
-    $ENV{VDT_CLEANUP_USER_FILE} = $file;
+    $ENV{OSG_CLEANUP_USER_FILE} = $file;
 }
 
 sub read_vo_file {
-    my $file = "$VDT_LOCATION/osg/etc/osg-user-vo-map.txt";
+    my $file = "/var/lib/osg/user-vo-map";
 
     if(!-e $file) {
-        log_and_die("");
+        log_and_die("The VO mapfile does not exist at '$file'.  Cannot continue.");
     }
 
     my @users;
@@ -196,9 +157,6 @@ sub find_and_run_scripts {
     }
     check_perms_and_owner(".");
     for my $script (glob("./*")) {
-        # the vdt-cleanup script is in the same directory as the worker scripts
-        my $script_name = basename($script);
-        next if($script_name eq $SCRIPT_NAME or $script_name eq "$SCRIPT_NAME~");
         run_script($script);
         sleep(1); # This is in place to help sysadmins Ctrl-C out of the script
     }
@@ -211,7 +169,7 @@ sub run_script {
 
     check_perms_and_owner($script);
 
-    $ENV{VDT_CLEANUP_AGE} = $AGE_IN_DAYS;
+    $ENV{OSG_CLEANUP_AGE} = $AGE_IN_DAYS;
 
     if($OPT_DRY_RUN) {
         out("\tNot executing $script because --dry-run is supplied.");
@@ -246,7 +204,6 @@ sub check_perms_and_owner {
 
 sub usage {
     print "$0 [options]\n";
-    print "--vdt-install <root directory of VDT install>\n";
     print "--dry-run\n";
     print "--help\n\n";
     exit 1;
@@ -260,8 +217,8 @@ sub create_lock {
         if(defined($pid) && $pid > 0) {
             my $process_info = get_process_info($pid);
 
-            if($process_info =~ /vdt-cleanup/) {
-                log_msg("A previous vdt-cleanup process was found running.  Sending it a kill signal");
+            if($process_info =~ /osg-cleanup/) {
+                log_msg("A previous osg-cleanup process was found running.  Sending it a kill signal");
                 log_msg("ps output:\n$process_info");
 
                 # Kill the process and clean up temp directories
@@ -304,6 +261,11 @@ sub out {
         print "$msg\n";
     }
     else {
-        vdt_install_log($msg);
+        log($msg);
     }
+}
+
+sub log {
+    my ($msg) = @_;
+    print LOG $msg;
 }

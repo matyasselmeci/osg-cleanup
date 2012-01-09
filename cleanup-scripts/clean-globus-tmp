@@ -4,4 +4,4 @@
 . $VDT_LOCATION/setup.sh
 
 cd $GLOBUS_LOCATION/tmp
-find . -xdev -atime +$VDT_CLEANUP_AGE -exec rm -f {} \;
+find . -xdev -atime +$OSG_CLEANUP_AGE -exec rm -f {} \;
