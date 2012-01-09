@@ -1,0 +1,309 @@
+#!/usr/bin/env perl
+
+=head1 NAME 
+
+vdt-cleanup-dirs - Cleanup cruft from the VDT installation and user
+                   directories.
+
+=head1 SYNOPSIS
+
+    vdt-cleanup [options] 
+                --vdt-install <location>
+                --dry-run
+                --help
+
+=head1 DESCRIPTION
+
+Write a description and put it here.
+
+=head1 OPTIONS
+
+=over 4
+
+=item B<--vdt-install> <location>
+
+The location the VDT was installed in. This option overrides the
+$VDT_LOCATION environment variable if it exists. This option is not
+needed if $VDT_LOCATION is set to the correct location. 
+
+=item B<--dry-run>
+
+Print what will be done, but do not actually do any work.
+
+=item B<--help> 
+
+Show brief explanatory text for using vdt-cleanup
+
+=back
+
+=cut
+
+use strict;
+use warnings;
+use Getopt::Long;
+use File::Basename;
+
+my $VDT_LOCATION = $ENV{VDT_LOCATION} || "";
+my $OPT_DRY_RUN = 0;
+my $AGE_IN_DAYS = 14;
+my $USERS;
+
+GetOptions("vdt-install=s" => \$VDT_LOCATION,
+           "dry-run"       => \$OPT_DRY_RUN,
+           "help|usage"    => \&usage);
+
+check_options();
+
+# Set this for all children scripts
+$ENV{VDT_LOCATION} = $VDT_LOCATION;
+
+my $time = time();
+my $CONFIG_FILE = "$VDT_LOCATION/vdt/etc/vdt-cleanup.conf";
+my $LOG_FILE    = "$VDT_LOCATION/logs/vdt-cleanup.log";
+my $SCRIPT_DIR  = "$VDT_LOCATION/vdt/cleanup-scripts";
+my $LOCK_FILE   = "$VDT_LOCATION/vdt/var/vdt-cleanup.lock";
+my $USER_FILE   = "$VDT_LOCATION/vdt/var/vdt-cleanup.users.$time.$$";
+my $SCRIPT_NAME = basename($0);
+
+# We can't load VDTConfigure until we know where VDT_LOCATION is
+push @INC, "$VDT_LOCATION/vdt/lib";
+require VDTConfigure;
+VDTConfigure::set_system_logfile($LOG_FILE);
+VDTConfigure->import();
+
+
+load_config_file($CONFIG_FILE);
+make_user_file($USER_FILE, $USERS);
+create_lock($LOCK_FILE);
+find_and_run_scripts($SCRIPT_DIR);
+remove_lock($LOCK_FILE);
+unlink($USER_FILE);
+
+
+sub check_options {
+    # We can't log any of these errors because we don't know where the log file is
+    if(!$VDT_LOCATION) {
+        die("Either \$VDT_LOCATION must be set in your environment or pass --vdt-install");
+    }
+    elsif(!-e $VDT_LOCATION) {
+        die("ERROR: VDT_LOCATION does not exist ($VDT_LOCATION)");
+    }
+    elsif(!-d $VDT_LOCATION) {
+        die("ERROR: VDT_LOCATION is not a directory ($VDT_LOCATION)");
+    }
+    elsif(!-d "$VDT_LOCATION/o..pacman..o") {
+        die("ERROR: VDT_LOCATION exists but does not appear to be a VDT install because the o..pacman..o directory is missing ($VDT_LOCATION)");
+    }
+}
+
+
+sub load_config_file {
+    my ($conf_file) = @_;
+
+    out("Loading config file '$conf_file'");
+
+    my @config = slurp($conf_file);
+
+    foreach (@config) {
+        if(/users\s*=\s*(.+)$/i) {
+            $USERS = $1;
+            out("Users: '$USERS'");
+        }
+        elsif(/age\s*=\s*(\d+)/i) {
+            $AGE_IN_DAYS = $1;
+            out("Age: '$AGE_IN_DAYS'");
+        }
+    }
+}
+
+sub make_user_file {
+    my ($file, $users) = @_;
+
+    out("Generating user file for users: $users");
+    out("User file location: $file");
+
+    my @users;
+    if($users eq '@vo-file') {
+        @users = read_vo_file();
+    }
+    else {
+        @users = split(' ', $users);
+    }
+
+    my %users;
+    for my $user (@users) {
+        my $home_dir = (getpwnam($user))[7];
+        if(not defined($home_dir)) {
+            out("User or home directory does not exist: '$user'");
+        }
+        elsif(!-e $home_dir) {
+            out("User '$user': Home directory does not exist ($home_dir)");
+        }
+        else {
+            $users{$user} = $home_dir;
+        }
+    }
+
+    # First "touch" the users file and set its permissions and ownership to lock it down
+    open(USERS, '>', $file) or log_and_die("Cannot open $file for writing: $!");
+    close(USERS);
+    my $user = (getpwuid($<))[0];
+    vdt_chown($user, undef, 1, $file);
+    chmod 0700, $file;
+
+    open(USERS, '>', $file) or log_and_die("Cannot open $file for writing: $!");
+    foreach my $user (keys %users) {
+        print USERS "$user $users{$user}\n";
+    }
+    close(USERS);
+
+    # Set this in the environment so children can find it
+    $ENV{VDT_CLEANUP_USER_FILE} = $file;
+}
+
+sub read_vo_file {
+    my $file = "$VDT_LOCATION/osg/etc/osg-user-vo-map.txt";
+
+    if(!-e $file) {
+        log_and_die("");
+    }
+
+    my @users;
+    my @lines = slurp($file);
+    
+    foreach (@lines) {
+        next if(/^\s*$/);
+        next if(/^\s*#/);
+        
+        if(/^\s*(\S+)\s+\S+\s*$/) {
+            push @users, $1;
+        }
+    }
+
+    return @users;
+}
+
+sub find_and_run_scripts {
+    my ($script_dir) = @_;
+
+    # For security purposes we need to change to the directory containing the 
+    # scripts.  This is so that after we evaluate the directory, Bad Guy can't
+    # replace the directory out from under us (in case Bad Guy has write access
+    # to a parent directort of SCRIPT_DIR)
+    out("Changing CWD to '$script_dir'");
+    if(!chdir($script_dir)) {
+        log_and_die("Could not chdir into $script_dir: $!");
+    }
+    check_perms_and_owner(".");
+    for my $script (glob("./*")) {
+        # the vdt-cleanup script is in the same directory as the worker scripts
+        my $script_name = basename($script);
+        next if($script_name eq $SCRIPT_NAME or $script_name eq "$SCRIPT_NAME~");
+        run_script($script);
+        sleep(1); # This is in place to help sysadmins Ctrl-C out of the script
+    }
+}
+
+sub run_script {
+    my ($script) = @_;
+
+    out("Going to execute script '$script'");
+
+    check_perms_and_owner($script);
+
+    $ENV{VDT_CLEANUP_AGE} = $AGE_IN_DAYS;
+
+    if($OPT_DRY_RUN) {
+        out("\tNot executing $script because --dry-run is supplied.");
+        return;
+    }
+    
+    # I set the nice level to add 39 so that in case the priority is negative it
+    # will still get bumped all the way up to 19.
+    my $command = "/bin/nice -n 39 $script >>$LOG_FILE 2>&1";
+    out("Executing command: '$command'");
+    my $ret = system($command);
+    out("Exit code: $ret");
+}
+
+
+sub check_perms_and_owner {
+    my ($file) = @_;
+
+    my @stat = stat($file);
+    my $mode = sprintf "%04o", $stat[2] & 07777;
+    my $uid = $stat[4];
+    my $gid = $stat[5];
+
+    if($uid != 0 or $gid != 0) {
+        log_and_die("\tThe owner and group on the file MUST be root ($file)");
+    }
+
+    if($mode ne "0700") {
+        log_and_die("\tThe mode on the file MUST be 0700 ($file)");
+    }
+}
+
+sub usage {
+    print "$0 [options]\n";
+    print "--vdt-install <root directory of VDT install>\n";
+    print "--dry-run\n";
+    print "--help\n\n";
+    exit 1;
+}
+
+sub create_lock {
+    my ($lock_file) = @_;
+
+    if(-r $lock_file) {
+        my ($pid) = slurp($lock_file) =~ /(\d+)/;
+        if(defined($pid) && $pid > 0) {
+            my $process_info = get_process_info($pid);
+
+            if($process_info =~ /vdt-cleanup/) {
+                log_msg("A previous vdt-cleanup process was found running.  Sending it a kill signal");
+                log_msg("ps output:\n$process_info");
+
+                # Kill the process and clean up temp directories
+                kill 9, $pid;
+            }
+        }
+    }
+    unlink($lock_file) if(-e $lock_file);
+
+    if(open(PID, '>', $lock_file)) {
+        print PID "$$\n";
+        close(PID);
+    }
+    else {  # If we can't open the pid file, there's not much to do except issue a warning
+        log_and_die("Can't open lock file '$lock_file': $!");
+    }
+}
+
+sub remove_lock {
+    my ($lock_file) = @_;
+
+    unlink($lock_file) if(-e $lock_file);
+}
+
+# When running in cron we want to make sure that error message make it into the
+# log file since the output of dir will probably go into a mail that nobody reads.
+sub log_and_die {
+    my ($msg) = @_;
+    out($msg);
+
+    unlink($USER_FILE) if(-e $USER_FILE);
+
+    die($msg);
+}
+
+sub out {
+    my ($msg) = @_;
+
+    if($OPT_DRY_RUN) {
+        print "$msg\n";
+    }
+    else {
+        vdt_install_log($msg);
+    }
+}

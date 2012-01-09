@@ -1,0 +1,49 @@
+#!/usr/bin/env perl
+
+open(IN, '<', $ENV{VDT_CLEANUP_USER_FILE}) or die("Cannot open $ENV{VDT_CLEANUP_USER_FILE}: $!");
+while(<IN>) {
+    if(/^(\S+)\s+(\S+)/) {
+        my $user = $1;
+        my $dir = $2;
+        print "Cleaning user $user directory $dir:\n";
+        if(-e $dir) {
+            chdir($dir);
+            my $days = $ENV{VDT_CLEANUP_AGE};
+
+            if(-d ".globus/.gass_cache") {
+                print "\tCleaning .globus/.gass_cache\n";
+
+                # On NFS root squash filesystems we cannot delete files as root.  So we will become
+                # the user who's home directory we are cleaning before deleting things.
+                run_cmd($user, "find .globus/.gass_cache/ -xdev -type f -atime +$days -exec rm -f {} \\;");
+                run_cmd($user, "find .globus/.gass_cache/ -xdev -depth -type d -atime +$days -empty -exec rmdir {} \\;");
+            }
+            else {
+                print "\t$dir/.globus/.gass_cache does not exist\n";
+            }
+            
+            if(-d ".globus/job") {
+                print "\tCleaning .globus/job\n";
+
+                run_cmd($user, "find .globus/job/ -xdev -type f -atime +$days -exec rm -f {} \\;");
+                run_cmd($user, "find .globus/job/ -xdev -depth -type d -atime +$days -empty -exec rmdir {} \\;");
+            }
+            else {
+                print "\t$dir/.globus/job does not exist\n";
+            }
+
+            print "\tCleaning user directory\n";
+            run_cmd($user, "find . -maxdepth 1 -xdev -type f -atime +$days -name \"gram_job_mgr_*.log\" -exec rm -f {} \\;");
+            run_cmd($user, "find . -maxdepth 1 -xdev -depth -name \"gram_scratch_*\" -type d -atime +$days -exec rm -rf {} \\;");
+        }
+
+        sleep(1); # This is in place to make it easier to Ctrl-C out if run interactively
+    }
+}
+
+
+sub run_cmd {
+    my ($user, $cmd) = @_;
+
+    return system("su - $user -s /bin/bash -c '$cmd'");
+}
