@@ -1,0 +1,46 @@
+#!/usr/bin/env perl
+
+my $CONFIG_FILE = "/etc/globus/globus-gram-job-manager.conf";
+
+# The directories we want to clean are configurable.  We will parse the 
+# configuration file to find them.
+my %dirs = parse_config_file();
+
+# The only directory that we *must* clean in this script is the state dir.
+# If we need to add more directories in the future put them here.
+if (not $dirs{'state-file-dir'}) {
+    $dirs{'state-file-dir'} = "/var/lib/globus/gram_job_state";
+}
+
+
+# Go through and clean directories
+foreach my $dir (values %dirs) {
+    print "Cleaning directory '$dir'\n";
+    
+    system("find $dir -xdev -atime +$ENV{OSG_CLEANUP_AGE} -exec rm -f {} \\;");
+}
+
+
+sub parse_config_file {
+    open(IN, '<', $CONFIG_FILE) or die("Cannot read $CONFIG_FILE: $!");
+    my @contents = <IN>;
+    close(IN);
+
+    my %dirs;
+    foreach my $line (@contents) {
+        if ($line =~ /^\s*-state-file-dir\s+(\S+)/) {
+            $dirs{'state-file-dir'} = $1;
+        }
+        elsif ($line =~ /^\s*-cache-location\s+(\S+)/) {
+            $dirs{'cache-location'} = $1;
+        }
+        elsif ($line =~ /^\s*-globus-job-dir\s+(\S+)/) {
+            $dirs{'globus-job-dir'} = $1;
+        }
+        elsif ($line =~ /^\s*-scratch-base-dir\s+(\S+)/) {
+            $dirs{'scratch-base-dir'} = $1;
+        }
+    }
+
+    return %dirs;
+}

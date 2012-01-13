@@ -1,0 +1,6 @@
+/var/log/osg/osg-cleanup.* {
+    weekly
+    rotate 10
+    missingok
+    notifempty
+}

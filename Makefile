@@ -1,0 +1,13 @@
+VERSION = 1.0
+
+_default:
+	@echo "Nothing to make. Try make dist"
+
+clean:
+	rm -fr osg-cleanup-*
+
+dist:
+	mkdir -p osg-cleanup-$(VERSION)
+	cp -pr etc/ libexec/ sbin/ init.d/ cron.d/ logrotate/ osg-cleanup-$(VERSION)/
+	tar zcf osg-cleanup-$(VERSION).tar.gz `find osg-cleanup-$(VERSION) ! -name *~ ! -name .#* ! -type d | grep -v '\.svn'`
+	rm -fr osg-cleanup-$(VERSION)

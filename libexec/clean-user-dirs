@@ -33,7 +33,6 @@ while(<IN>) {
             }
 
             print "\tCleaning user directory\n";
-            run_cmd($user, "find . -maxdepth 1 -xdev -type f -atime +$days -name \"gram_job_mgr_*.log\" -exec rm -f {} \\;");
             run_cmd($user, "find . -maxdepth 1 -xdev -depth -name \"gram_scratch_*\" -type d -atime +$days -exec rm -rf {} \\;");
         }
 

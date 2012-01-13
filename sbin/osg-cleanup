@@ -33,6 +33,7 @@ Show brief explanatory text for using osg-cleanup
 
 use strict;
 use warnings;
+use FileHandle;
 use Getopt::Long;
 use File::Basename;
 
@@ -50,7 +51,7 @@ my $SCRIPT_DIR  = "/usr/libexec/osg-cleanup";
 my $LOCK_FILE   = "/var/lock/osg-cleanup.lock";
 my $USER_FILE   = "/tmp/osg-cleanup.users.$time.$$";
 
-open(LOG, '>', $LOG_FILE) or warn("Cannot open log file for writing '$LOG_FILE': $!");
+open_log();
 
 load_config_file($CONFIG_FILE);
 make_user_file($USER_FILE, $USERS);
@@ -180,7 +181,9 @@ sub run_script {
     # will still get bumped all the way up to 19.
     my $command = "/bin/nice -n 39 $script >>$LOG_FILE 2>&1";
     out("Executing command: '$command'");
+    close_log();
     my $ret = system($command);
+    open_log();
     out("Exit code: $ret");
 }
 
@@ -215,7 +218,7 @@ sub create_lock {
     if(-r $lock_file) {
         my ($pid) = slurp($lock_file) =~ /(\d+)/;
         if(defined($pid) && $pid > 0) {
-            my $process_info = get_process_info($pid);
+            my $process_info = `ps -f -ww -p $pid`;
 
             if($process_info =~ /osg-cleanup/) {
                 log_msg("A previous osg-cleanup process was found running.  Sending it a kill signal");
@@ -261,11 +264,36 @@ sub out {
         print "$msg\n";
     }
     else {
-        log($msg);
+        to_log($msg);
     }
 }
 
-sub log {
+sub open_log {
+    open(LOG, '>>', $LOG_FILE) or warn("Cannot open log file for writing '$LOG_FILE': $!");
+}
+
+sub to_log {
     my ($msg) = @_;
-    print LOG $msg;
+    print LOG "$msg\n";
+}
+
+sub close_log {
+    close(LOG);
+}
+
+sub slurp {
+    my ($file) = @_;
+
+    if (not -e $file) {
+	return undef;
+    }
+
+    my $fh = new FileHandle $file;
+    if (not defined $fh) {
+	return undef;
+    }
+
+    my @contents = <$fh>;
+    my $contents_as_string = join('', @contents);
+    return wantarray ? @contents : $contents_as_string;
 }
