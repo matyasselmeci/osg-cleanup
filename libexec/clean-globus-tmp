@@ -16,8 +16,16 @@ if (not $dirs{'state-file-dir'}) {
 # Go through and clean directories
 foreach my $dir (values %dirs) {
     print "Cleaning directory '$dir'\n";
+
+    # In general we want to do a recursive cleanup on these directories.
+    # However, we don't want to recurse through the Globus state file dir,
+    # per JIRA ticket SOFTWARE-560
+    my $flags = "";
+    if($dir eq $dirs{'state-file-dir'}) {
+        $flags = "-maxdepth 1";
+    }
     
-    system("find $dir -xdev -atime +$ENV{OSG_CLEANUP_AGE} -exec rm -f {} \\;");
+    system("find $dir $flags -xdev -atime +$ENV{OSG_CLEANUP_AGE} -exec rm -f {} \\;");
 }
 
 
