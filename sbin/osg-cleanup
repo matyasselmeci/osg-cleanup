@@ -40,7 +40,7 @@ use File::Basename;
 
 my $OPT_DRY_RUN = 0;
 my $AGE_IN_DAYS = 14;
-my $USERS;
+my $USERS = "";
 
 GetOptions("dry-run"    => \$OPT_DRY_RUN,
            "help|usage" => \&usage);
@@ -70,11 +70,11 @@ sub load_config_file {
     my @config = slurp($conf_file);
 
     foreach (@config) {
-        if(/users\s*=\s*(.+)$/i) {
+        if(/^\s*users\s*=\s*(.+)$/i) {
             $USERS = $1;
             out("Users: '$USERS'");
         }
-        elsif(/age\s*=\s*(\d+)/i) {
+        elsif(/^\s*age\s*=\s*(\d+)/i) {
             $AGE_IN_DAYS = $1;
             out("Age: '$AGE_IN_DAYS'");
         }
