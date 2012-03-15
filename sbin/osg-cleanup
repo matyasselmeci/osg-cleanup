@@ -34,6 +34,7 @@ Show brief explanatory text for using osg-cleanup
 use strict;
 use warnings;
 use FileHandle;
+use File::Spec;
 use Getopt::Long;
 use File::Basename;
 
@@ -197,11 +198,13 @@ sub check_perms_and_owner {
     my $gid = $stat[5];
 
     if($uid != 0 or $gid != 0) {
-        log_and_die("\tThe owner and group on the file MUST be root ($file)");
+        my $abs_path = File::Spec->rel2abs($file);
+        log_and_die("\tThe owner and group on the file MUST be root ($abs_path)");
     }
 
     if($mode ne "0700") {
-        log_and_die("\tThe mode on the file MUST be 0700 ($file)");
+        my $abs_path = File::Spec->rel2abs($file);        
+        log_and_die("\tThe mode on the file MUST be 0700 ($abs_path)");
     }
 }
 
