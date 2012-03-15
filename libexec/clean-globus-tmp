@@ -22,10 +22,10 @@ foreach my $dir (values %dirs) {
     # per JIRA ticket SOFTWARE-560
     my $flags = "";
     if($dir eq $dirs{'state-file-dir'}) {
-        $flags = "-maxdepth 1";
+        $flags = "-maxdepth 1 -type f";
     }
     
-    system("find $dir $flags -xdev -atime +$ENV{OSG_CLEANUP_AGE} -exec rm -f {} \\;");
+    system("find $dir -xdev $flags -atime +$ENV{OSG_CLEANUP_AGE} -exec rm -f {} \\;");
 }
 
 
