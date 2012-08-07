@@ -21,15 +21,25 @@ while(<IN>) {
             else {
                 print "\t$dir/.globus/.gass_cache does not exist\n";
             }
-            
-            if(-d ".globus/job") {
-                print "\tCleaning .globus/job\n";
 
-                run_cmd($user, "find .globus/job/ -xdev -type f -atime +$days -exec rm -f {} \\;");
-                run_cmd($user, "find .globus/job/ -xdev -depth -type d -atime +$days -empty -exec rmdir {} \\;");
+            my $jobdir1 = ".globus/$user/.globus/job";
+            my $jobdir2 = ".globus/job";
+            my $jobdir = "";
+
+            if(-d $jobdir1) {
+                $jobdir = $jobdir1;
+            } elsif(-d $jobdir2) {
+                $jobdir = $jobdir2;
+            }
+            
+            if($jobdir ne "") {
+                print "\tCleaning $jobdir\n";
+
+                run_cmd($user, "find $jobdir -xdev -type f -atime +$days -exec rm -f {} \\;");
+                run_cmd($user, "find $jobdir -xdev -depth -type d -atime +$days -empty -exec rmdir {} \\;");
             }
             else {
-                print "\t$dir/.globus/job does not exist\n";
+                print "\tNeither $jobdir1 nor $jobdir2 exist\n";
             }
 
             print "\tCleaning user directory\n";
