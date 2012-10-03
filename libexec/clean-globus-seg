@@ -1,0 +1,113 @@
+#!/usr/bin/env perl
+
+# Clean old log files produced by the Globus Scheduler Event Generator. (#SOFTWARE-786)
+# Keep the 2 most recent files.
+# Log file path pattern is derived from an environment variable set in a
+# sysconfig file (i.e. bash script with hopefully no side effects).
+
+
+use strict;
+use warnings;
+
+my $DEFAULT_GLOBUS_SEG_LOG_GLOB = "/var/log/globus/globus-seg-*";
+my $GLOBUS_SEG_CONFIG_PATH = "/etc/sysconfig/globus-scheduler-event-generator";
+
+sub logfmt_to_glob {
+    # Turn "GLOBUS_SEG_LOGFMT" (which is a printf-style format string) to a glob
+    $_[0] =~ s/[%]s/*/;
+    return $_[0];
+}
+
+sub get_log_glob_from_globus_seg_config {
+    # seg file name and location is set in "/etc/sysconfig/globus-scheduler-event-generator"
+    # This is a bash file that's sourced by the init script.
+    # The var is GLOBUS_SEG_LOGFMT and is a printf-style format string,
+    # possibly referencing vars that are set in the init script but not by osg-cleanup.
+
+    my ($globus_seg_config_path) = @_;
+
+    if (exists $ENV{GLOBUS_SEG_LOGFMT}) {
+        return logfmt_to_glob($ENV{GLOBUS_SEG_LOGFMT});
+    }
+
+    if (! -r $globus_seg_config_path) {
+        print "Unable to read Globus SEG config from $globus_seg_config_path, falling back to default log glob.\n";
+        return $DEFAULT_GLOBUS_SEG_LOG_GLOB;
+    }
+
+    # Set up the environment vars the way the init script does.
+    my %save_ENV = %ENV;
+
+    $ENV{prefix} ||= (exists($ENV{GLOBUS_LOCATION}) ? $ENV{GLOBUS_LOCATION} : "/usr");
+    $ENV{exec_prefix} ||= "/usr";
+    $ENV{sbindir} ||= "/usr/sbin";
+    $ENV{bindir} ||= "/usr/bin";
+    $ENV{libdir} ||= (`uname -m` =~ /ppc64|s390x|sparc64|x86_64/ ? "/usr/lib64" : "/usr/lib");
+    $ENV{datadir} ||= "/usr/share";
+    $ENV{sysconfdir} ||= "/etc";
+    $ENV{sharedstatedir} ||= "/usr/com";
+    $ENV{localstatedir} ||= "/var";
+    $ENV{includedir} = "$ENV{prefix}/include/globus";
+    $ENV{datarootdir} = "$ENV{prefix}/share";
+
+    # Source the /etc/sysconfig file and display how it changes the resulting environment.
+    my @new_env = `. $globus_seg_config_path > /dev/null 2>&1; set`;
+    my %new_env_hash;
+    # Parse the new environment. Caveat: does not handle vars with multi-line
+    # values, but GLOBUS_SEG_LOGFMT shouldn't be one.
+    foreach (@new_env) {
+        my ($key, $value) = split '=', $_, 2;
+        next if ! $key or ! $value;
+        chomp($value);
+        $new_env_hash{$key} = $value;
+    }
+
+    %ENV = %save_ENV;
+
+    if (! exists $new_env{GLOBUS_SEG_LOGFMT}) {
+        print "Unable to find GLOBUS_SEG_LOGFMT in Globus SEG config file at $globus_seg_config_path, falling back to default log glob.\n";
+        return $DEFAULT_GLOBUS_SEG_LOG_GLOB;
+    }
+
+    return logfmt_to_glob($new_env{GLOBUS_SEG_LOGFMT});
+}
+
+sub unlink_loud {
+    my $file = shift;
+    print "Removing '$file': ";
+    if (! unlink $file) {
+        print "ERROR: $!\n";
+    }
+    else {
+        print "OK\n";
+    }
+}
+
+sub clean_file {
+    my $file = shift;
+    if (exists($ENV{OSG_CLEANUP_AGE}) && -A $file > $ENV{OSG_CLEANUP_AGE}) {
+        unlink_loud($file);
+    }
+}
+
+
+sub clean_globus_seg_logs {
+    my $globus_seg_log_glob = get_log_glob_from_globus_seg_config($GLOBUS_SEG_CONFIG_PATH);
+    my @matching_files = 
+        sort { stat($a)[8] <=> stat($b)[8] } # sort by atime, most recent last
+        grep { -f $_ }
+        glob($globus_seg_log_glob);
+
+    # Leave the most two recent files.
+    for (1..2) { pop @matching_files }
+
+    foreach my $matching_file (@matching_files) {
+        clean_file($matching_file);
+    }
+}
+
+
+
+# MAIN:
+clean_globus_seg_logs();
+
