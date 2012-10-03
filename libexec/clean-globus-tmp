@@ -67,12 +67,12 @@ sub clean_gram_state_file_dir {
     }
 
     # Do not cross device boundaries.
-    my $topdev = stat($state_file_dir)[0];
+    my $topdev = (stat($state_file_dir))[0];
 
     my @matching_files_toplevel = grep { -f $_ } glob("$state_file_dir/*");
     my @matching_files_deep = grep { -f $_ } glob("$state_file_dir/*/*/*/*");
     foreach my $matching_file (@matching_files_toplevel, @matching_files_deep) {
-        next if stat($matching_file)[0] != $topdev;
+        next if (stat($matching_file))[0] != $topdev;
         clean_file($matching_file);
     }
 }
