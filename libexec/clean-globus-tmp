@@ -1,5 +1,8 @@
 #!/usr/bin/env perl
 
+use strict;
+use warnings;
+
 my $CONFIG_FILE = "/etc/globus/globus-gram-job-manager.conf";
 
 # The directories we want to clean are configurable.  We will parse the 
@@ -12,7 +15,6 @@ if (not $dirs{'state-file-dir'}) {
     $dirs{'state-file-dir'} = "/var/lib/globus/gram_job_state";
 }
 
-
 # Go through and clean directories
 foreach my $dir (values %dirs) {
     print "Cleaning directory '$dir'\n";
@@ -21,11 +23,58 @@ foreach my $dir (values %dirs) {
     # However, we don't want to recurse through the Globus state file dir,
     # per JIRA ticket SOFTWARE-560
     my $flags = "";
-    if($dir eq $dirs{'state-file-dir'}) {
-        $flags = "-maxdepth 1 -type f";
+    if ($dir eq $dirs{'state-file-dir'}) { 
+        clean_gram_state_file_dir($dir); 
+    } else { 
+        system("find $dir -xdev $flags -atime +$ENV{OSG_CLEANUP_AGE} -exec rm -f {} \\;");
+    } 
+}
+
+sub unlink_loud {
+    my $file = shift;
+    print "Removing '$file': ";
+    if (! unlink $file) {
+        print "ERROR: $!\n";
     }
-    
-    system("find $dir -xdev $flags -atime +$ENV{OSG_CLEANUP_AGE} -exec rm -f {} \\;");
+    else {
+        print "OK\n";
+    }
+}
+
+sub clean_file {
+    my $file = shift;
+    if (exists($ENV{OSG_CLEANUP_AGE}) && -A $file > $ENV{OSG_CLEANUP_AGE}) {
+        unlink_loud($file);
+    }
+}
+
+sub clean_gram_state_file_dir {
+    my ($state_file_dir) = @_;
+
+    # Want to clean up the following patterns in $state_file_dir:
+    #   $state_file_dir/* (files only) (backward compatibility)
+    #   $state_file_dir/USERNAME/DN_HASH/JOBMANAGER/* (files only) (new, see #SOFTWARE-785)
+    # Must be careful not to clean out the following: (see #SOFTWARE-560)
+    #   $state_file_dir/HOSTNAME/JOBMANAGER.DN_HASH.{lock,cred,sock,pid}
+
+    # Generalization I'm using for robustness:
+    #   Clean files matching $state_file_dir/*
+    #   Clean files matching $state_file_dir/SUBDIR1/SUBDIR2/SUBDIR3/*
+    #   Ignore all else
+
+    unless (-d $state_file_dir) {
+        warn "gram state file dir ($state_file_dir) is not a directory!"; return;
+    }
+
+    # Do not cross device boundaries.
+    my $topdev = stat($state_file_dir)[0];
+
+    my @matching_files_toplevel = grep { -f $_ } glob("$state_file_dir/*");
+    my @matching_files_deep = grep { -f $_ } glob("$state_file_dir/*/*/*/*");
+    foreach my $matching_file (@matching_files_toplevel, @matching_files_deep) {
+        next if stat($matching_file)[0] != $topdev;
+        clean_file($matching_file);
+    }
 }
 
 
