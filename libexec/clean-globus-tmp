@@ -16,17 +16,23 @@ if (not $dirs{'state-file-dir'}) {
 }
 
 # Go through and clean directories
+my $have_tmpwatch = ! system("which tmpwatch > /dev/null 2>&1");
 foreach my $dir (values %dirs) {
     print "Cleaning directory '$dir'\n";
 
     # In general we want to do a recursive cleanup on these directories.
     # However, we don't want to recurse through the Globus state file dir,
     # per JIRA ticket SOFTWARE-560
-    my $flags = "";
     if ($dir eq $dirs{'state-file-dir'}) { 
         clean_gram_state_file_dir($dir); 
-    } else { 
-        system("find $dir -xdev $flags -atime +$ENV{OSG_CLEANUP_AGE} -exec rm -f {} \\;");
+    }
+    else { 
+        if ($have_tmpwatch) {
+            system("tmpwatch --atime $ENV{OSG_CLEANUP_AGE}d $dir");
+        }
+        else {
+            system("find $dir -xdev -atime +$ENV{OSG_CLEANUP_AGE} -exec rm -f {} \\;");
+        }
     } 
 }
 
