@@ -9,7 +9,7 @@
 use strict;
 use warnings;
 
-my $DEFAULT_GLOBUS_SEG_LOG_GLOB = "/var/log/globus/globus-seg-*";
+my $DEFAULT_GLOBUS_SEG_LOG_GLOB = "/var/lib/globus/globus-seg-*";
 my $GLOBUS_SEG_CONFIG_PATH = "/etc/sysconfig/globus-scheduler-event-generator";
 
 sub logfmt_to_glob {
@@ -85,7 +85,7 @@ sub unlink_loud {
 
 sub clean_file {
     my $file = shift;
-    if (exists($ENV{OSG_CLEANUP_AGE}) && -A $file > $ENV{OSG_CLEANUP_AGE}) {
+    if (exists($ENV{OSG_CLEANUP_AGE}) && -M $file > $ENV{OSG_CLEANUP_AGE}) {
         unlink_loud($file);
     }
 }
@@ -93,10 +93,26 @@ sub clean_file {
 
 sub clean_globus_seg_logs {
     my $globus_seg_log_glob = get_log_glob_from_globus_seg_config($GLOBUS_SEG_CONFIG_PATH);
+    
+    # Loop over SEG directories
+    foreach my $dir (glob($globus_seg_log_glob)) {
+        if (-d $dir) {
+            clean_globus_seg_dir($dir);
+        }
+        else {
+            print "Skipping non-directory $dir\n";
+        }
+    }
+}
+
+sub clean_globus_seg_dir {
+    # Clean a SEG directory
+    my $dir = shift;
+
     my @matching_files = 
-        (sort { (stat($a))[8] <=> (stat($b))[8] } # sort by atime, most recent last
+        (sort { (stat($a))[9] <=> (stat($b))[9] } # sort by mtime, most recent last
          grep { -f $_ }
-         glob($globus_seg_log_glob));
+         glob($dir . '/*'));
 
     # Leave the most two recent files.
     for (1..2) { pop @matching_files }
