@@ -28,7 +28,8 @@ foreach my $dir (values %dirs) {
     }
     else { 
         if ($have_tmpwatch) {
-            system("tmpwatch --atime $ENV{OSG_CLEANUP_AGE}d $dir");
+            my $age = 24 * $ENV{OSG_CLEANUP_AGE}; # el5 tmpwatch wants time in hours
+            system("tmpwatch --atime $age $dir");
         }
         else {
             system("find $dir -xdev -atime +$ENV{OSG_CLEANUP_AGE} -exec rm -f {} \\;");

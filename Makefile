@@ -1,4 +1,4 @@
-VERSION = 1.5
+VERSION = 1.6
 
 _default:
 	@echo "Nothing to make. Try make dist"
