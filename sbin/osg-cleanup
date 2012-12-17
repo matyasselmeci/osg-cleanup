@@ -37,6 +37,7 @@ use FileHandle;
 use File::Spec;
 use Getopt::Long;
 use File::Basename;
+use File::Temp;
 
 my $OPT_DRY_RUN = 0;
 my $AGE_IN_DAYS = 14;
@@ -50,7 +51,7 @@ my $CONFIG_FILE = "/etc/osg/osg-cleanup.conf";
 my $LOG_FILE    = "/var/log/osg/osg-cleanup.log";
 my $SCRIPT_DIR  = "/usr/libexec/osg-cleanup";
 my $LOCK_FILE   = "/var/lock/osg-cleanup.lock";
-my $USER_FILE   = "/tmp/osg-cleanup.users.$time.$$";
+my $USER_FILE   = File::Temp->new(TEMPLATE => "/tmp/osg-cleanup.users.XXXXXX");
 
 open_log();
 
@@ -59,7 +60,6 @@ make_user_file($USER_FILE, $USERS);
 create_lock($LOCK_FILE);
 find_and_run_scripts($SCRIPT_DIR);
 remove_lock($LOCK_FILE);
-unlink($USER_FILE);
 
 
 sub load_config_file {
@@ -109,16 +109,10 @@ sub make_user_file {
         }
     }
 
-    # First "touch" the users file and set its permissions to lock it down
-    open(USERS, '>', $file) or log_and_die("Cannot open $file for writing: $!");
-    close(USERS);
-    chmod 0700, $file;
-
-    open(USERS, '>', $file) or log_and_die("Cannot open $file for writing: $!");
     foreach my $user (keys %users) {
-        print USERS "$user $users{$user}\n";
+        print $file "$user $users{$user}\n";
     }
-    close(USERS);
+    close($file);
 
     # Set this in the environment so children can find it
     $ENV{OSG_CLEANUP_USER_FILE} = $file;
@@ -254,8 +248,6 @@ sub remove_lock {
 sub log_and_die {
     my ($msg) = @_;
     out($msg);
-
-    unlink($USER_FILE) if(-e $USER_FILE);
 
     die($msg);
 }
