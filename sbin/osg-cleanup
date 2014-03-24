@@ -218,8 +218,8 @@ sub create_lock {
             my $process_info = `ps -f -ww -p $pid`;
 
             if($process_info =~ /osg-cleanup/) {
-                log_msg("A previous osg-cleanup process was found running.  Sending it a kill signal");
-                log_msg("ps output:\n$process_info");
+                out("A previous osg-cleanup process was found running.  Sending it a kill signal");
+                out("ps output:\n$process_info");
 
                 # Kill the process and clean up temp directories
                 kill 9, $pid;
