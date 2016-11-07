@@ -1,0 +1,11 @@
+#!/bin/sh
+
+# This is a dummy init file so that we can keep the interface of calling
+# service osg-cleanup-cron start/stop/status
+
+case "$1" in
+    start) systemctl start osg-cleanup.timer ;;
+    stop) systemctl stop osg-cleanup.timer ;;
+    status) systemctl status osg-cleanup.timer ;;
+esac
+

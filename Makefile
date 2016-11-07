@@ -4,6 +4,7 @@ libexecdir=$(prefix)/libexec
 sysconfdir=/etc
 localstatedir=/var
 unitdir=$(prefix)/lib/systemd/system
+initrddir=$(sysconfdir)/rc.d/init.d
 
 VERSION = 1.8.0
 
@@ -33,10 +34,12 @@ install:
 		install -d $(DESTDIR)$(unitdir); \
 		install -m 0644 systemd/osg-cleanup.service $(DESTDIR)$(unitdir)/osg-cleanup.service; \
 		install -m 0644 systemd/osg-cleanup.timer $(DESTDIR)$(unitdir)/osg-cleanup.timer; \
+		install -d $(DESTDIR)$(initrddir); \
+		install -m 0755 systemd/osg-cleanup-cron.init $(DESTDIR)$(initrddir)/osg-cleanup-cron; \
 	else \
-		install -d $(DESTDIR)$(sysconfdir)/rc.d/init.d/; \
+		install -d $(DESTDIR)$(initrddir); \
 		install -d $(DESTDIR)$(sysconfdir)/cron.d/; \
-		install -m 755 init.d/osg-cleanup-cron $(DESTDIR)$(sysconfdir)/rc.d/init.d/; \
+		install -m 755 init.d/osg-cleanup-cron $(DESTDIR)$(initrddir); \
 		install -m 644 cron.d/osg-cleanup $(DESTDIR)$(sysconfdir)/cron.d/; \
 	fi
 	#
