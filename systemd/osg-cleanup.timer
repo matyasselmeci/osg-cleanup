@@ -1,0 +1,6 @@
+[Unit]
+Description=Run OSG Cleanup hourly, 15 minutes after the hour
+
+[Timer]
+OnCalendar=*-*-* *:15:00
+

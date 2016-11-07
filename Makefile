@@ -8,6 +8,6 @@ clean:
 
 dist:
 	mkdir -p osg-cleanup-$(VERSION)
-	cp -pr etc/ libexec/ sbin/ init.d/ cron.d/ logrotate/ osg-cleanup-$(VERSION)/
+	cp -pr etc/ libexec/ sbin/ init.d/ cron.d/ logrotate/ systemd/ osg-cleanup-$(VERSION)/
 	tar zcf osg-cleanup-$(VERSION).tar.gz `find osg-cleanup-$(VERSION) ! -name *~ ! -name .#* ! -type d | grep -v '\.svn'`
 	rm -fr osg-cleanup-$(VERSION)
